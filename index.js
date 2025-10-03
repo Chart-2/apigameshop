@@ -25,18 +25,20 @@ const pool = mysql.createPool({
 app.get('/', (req, res) => {
   res.send('✅ API is running...');
 });
-// --- User ---
+// ===== GET users ทั้งหมด =====
 app.get('/users', async (req, res) => {
   try {
-    const [rows] = await pool.query("SELECT user_id, username, email, profile_image,wallet_balance,role  FROM User");
+    const [rows] = await pool.query(
+      "SELECT user_id, username, email, profile_image, wallet_balance, role FROM User"
+    );
 
     const result = rows.map(user => ({
       user_id: user.user_id,
       username: user.username,
       email: user.email,
-      hasImage: !!user.profile_image,   // true ถ้ามีรูป
-      wallet:user.wallet_balance,
-      role :user.role
+      hasImage: !!user.profile_image,  // true ถ้ามีรูป
+      wallet: user.wallet_balance,
+      role: user.role
     }));
 
     res.json(result);
@@ -45,54 +47,33 @@ app.get('/users', async (req, res) => {
   }
 });
 
-
-app.post('register/user', async (req, res) => {
+// ===== GET user ตาม id =====
+app.get('/users/:id', async (req, res) => {
   try {
-    const { username, email, password } = req.body;
-    const [result] = await pool.query(
-      "INSERT INTO User (username, email, password) VALUES (?, ?, ?)",
-      [username, email, password]
+    const [rows] = await pool.query(
+      "SELECT user_id, username, email, profile_image, wallet_balance, role FROM User WHERE user_id = ?",
+      [req.params.id]
     );
-    res.json({ id: result.insertId, username, email });
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const user = rows[0];
+    res.json({
+      user_id: user.user_id,
+      username: user.username,
+      email: user.email,
+      hasImage: !!user.profile_image,
+      wallet: user.wallet_balance,
+      role: user.role
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// --- GameCategory ---
-app.get('/categories', async (req, res) => {
-  try {
-    const [rows] = await pool.query("SELECT * FROM GameCategory");
-    res.json(rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
-
-
-// --- Game ---
-app.get('/games', async (req, res) => {
-  try {
-    const [rows] = await pool.query("SELECT * FROM Game");
-    res.json(rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('add/game', async (req, res) => {
-  try {
-    const { name, price, category_id } = req.body;
-    const [result] = await pool.query(
-      "INSERT INTO Game (name, price, category_id) VALUES (?, ?, ?)",
-      [name, price, category_id]
-    );
-    res.json({ id: result.insertId, name, price, category_id });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
 // ===== Start Server =====
 
