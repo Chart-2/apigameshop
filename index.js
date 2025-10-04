@@ -124,7 +124,7 @@ app.post('/users/register', upload.single('profile_image'), async (req, res) => 
     res.status(201).json({
       message: "User registered successfully",
       user_id: result.insertId,
-      avatar_url: profileimage,
+      profileimage: profileimage,
     });
   } catch (err) {
     if (err && err.code === "LIMIT_FILE_SIZE") {
@@ -183,6 +183,57 @@ app.post('/users/login', async (req, res) => {
       message: "Login successful"
     });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+app.put('/users/:id/update', upload.single('profile_image'), async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const { username } = req.body;
+
+    // ✅ ตรวจสอบว่ามีผู้ใช้จริงหรือไม่
+    const [users] = await pool.query("SELECT * FROM User WHERE user_id = ?", [userId]);
+    if (users.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // รูปเดิมจากฐานข้อมูล
+    let profileImageUrl = users[0].profile_image;
+
+    // ✅ ถ้ามีการอัปโหลดรูปใหม่ (และไม่ใช่ค่าว่าง)
+    if (req.file && req.file.buffer && req.file.size > 0) {
+      const processed = await sharp(req.file.buffer)
+        .resize(512, 512, { fit: "cover" })
+        .toFormat("webp", { quality: 90 })
+        .toBuffer();
+
+      const uploaded = await new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          { folder: "profile", resource_type: "image", format: "webp" },
+          (err, result) => (err ? reject(err) : resolve(result))
+        );
+        stream.end(processed);
+      });
+
+      // ใช้ URL ของรูปที่อัปโหลดใหม่
+      profileImageUrl = uploaded.secure_url;
+    }
+
+    // ✅ อัปเดตเฉพาะชื่อหรือรูป
+    await pool.query(
+      "UPDATE User SET username = ?, profile_image = ? WHERE user_id = ?",
+      [username || users[0].username, profileImageUrl, userId]
+    );
+
+    res.json({
+      message: "✅ User updated successfully",
+      user_id: userId,
+      username: username || users[0].username,
+      profile_image: profileImageUrl
+    });
+
+  } catch (err) {
+    console.error("Update error:", err);
     res.status(500).json({ error: err.message });
   }
 });
