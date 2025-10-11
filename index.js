@@ -7,6 +7,8 @@ import gameRoutes from "./src/routes/gameRoutes.js";
 dotenv.config();
 
 const app = express();
+
+// 🔧 Middleware พื้นฐาน
 app.use(cors());
 app.use(express.json());
 
