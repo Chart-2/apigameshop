@@ -303,7 +303,6 @@ export const addToCart = async (req, res) => {
 export const purchaseGames = async (req, res) => {
   const conn = await pool.getConnection();
   try {
-    // ✅ รองรับทั้ง body และ param
     const userId = Number(req.body.user_id || req.params.id);
     if (!userId) throw new Error("user_id ไม่ถูกต้อง");
 
@@ -337,12 +336,16 @@ export const purchaseGames = async (req, res) => {
     let balance = Number(userRows[0].wallet_balance);
     let totalSpent = 0;
 
+    // ✅ รวมชื่อเกมทั้งหมดไว้ก่อน (เช่น "Elden Ring, Minecraft, GTA V")
+    const purchasedNames = cartItems.map((i) => i.name).join(", ");
+
+    // ✅ ตรวจและหักเงิน + เพิ่มเกมเข้า MyGame + ลบออกจากตะกร้า
     for (const item of cartItems) {
       const totalPrice = item.price * item.quantity;
+
       if (balance < totalPrice)
         throw new Error(`ยอดเงินไม่พอสำหรับเกม ${item.name}`);
 
-      // ✅ หักเงิน
       balance -= totalPrice;
       totalSpent += totalPrice;
 
@@ -351,27 +354,23 @@ export const purchaseGames = async (req, res) => {
         [balance, userId]
       );
 
-      const purchasedNames = cartItems.map((i) => i.name).join(", ");
-
-      // ✅ เพิ่มธุรกรรม WalletTransaction (ครั้งเดียว)
-      await conn.query(
-        `INSERT INTO WalletTransaction (user_id, type, note, amount)
-        VALUES (?, 'ซื้อเกม', ?, ?)`,
-        [userId, ` ${purchasedNames}`, totalSpent]
-      );
-
-      // ✅ เพิ่มเกมเข้า MyGame
       await conn.query(
         "INSERT INTO MyGame (user_id, game_id) VALUES (?, ?)",
         [userId, item.game_id]
       );
 
-      // ✅ ลบออกจากตะกร้า
       await conn.query(
         "DELETE FROM CartItem WHERE cart_id = ? AND game_id = ?",
         [cartId, item.game_id]
       );
     }
+
+    // ✅ เพิ่มธุรกรรม WalletTransaction (เพียงครั้งเดียว)
+    await conn.query(
+      `INSERT INTO WalletTransaction (user_id, type, note, amount)
+       VALUES (?, 'ซื้อเกม', ?, ?)`,
+      [userId, purchasedNames, totalSpent]
+    );
 
     await conn.commit();
 
