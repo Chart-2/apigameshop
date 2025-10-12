@@ -303,3 +303,31 @@ export const getMyGames = async (req, res) => {
 };
 
 
+export const getGameRankingDetail = async (req, res) => {
+  try {
+    const gameId = Number(req.params.gameid);
+    if (!gameId)
+      return res.status(400).json({ error: "กรุณาระบุ game_id ให้ถูกต้อง" });
+
+    const [rows] = await pool.query(`
+      SELECT 
+        r.rank_position,
+        g.name
+      FROM GameRanking r
+      JOIN Game g ON g.game_id = r.game_id
+      WHERE g.game_id = ?
+      LIMIT 1
+    `, [gameId]);
+
+    if (!rows.length)
+      return res.status(404).json({ error: "ไม่พบเกมนี้ในอันดับ" });
+
+    res.json({
+      message: "✅ ดึงอันดับเกมสำเร็จ",
+      data: rows[0],
+    });
+  } catch (err) {
+    console.error("❌ getGameRankingDetail error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};

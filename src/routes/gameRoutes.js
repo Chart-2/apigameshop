@@ -9,7 +9,7 @@ import {
   deleteGame,
   searchGames,
 updateAndGetGameRanking,
-getMyGames
+getMyGames,getGameRankingDetail
 } from "../controllers/gameController.js";
 
 const router = express.Router();
@@ -19,6 +19,8 @@ const router = express.Router();
 
 router.get("/search", searchGames);    
 router.get("/ranking", updateAndGetGameRanking);
+
+router.get("/detailranking/:gameid", getGameRankingDetail);
 router.get("/library/:id", getMyGames);
 
 router.get("/", getAllGames);
