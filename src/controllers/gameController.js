@@ -176,3 +176,130 @@ export const deleteGame = async (req, res) => {
     res.status(500).json({ error: "Database error" });
   }
 }
+
+export const updateAndGetGameRanking = async (req, res) => {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    // 🔹 1. ดึงยอดขายจาก MyGame
+    const [topGames] = await conn.query(`
+      SELECT 
+        g.game_id,
+        g.name,
+        g.price,
+        g.image,
+        COUNT(mg.mygame_id) AS total_sales
+      FROM MyGame mg
+      JOIN Game g ON g.game_id = mg.game_id
+      GROUP BY g.game_id
+      ORDER BY total_sales DESC
+      LIMIT 10;
+    `);
+
+    // 🔹 2. ถ้าไม่มีข้อมูลเลย → return ออก
+    if (!topGames.length) {
+      await conn.rollback();
+      return res.status(404).json({
+        message: "❌ ไม่มีข้อมูลยอดขายเกมในระบบ",
+        top5: [],
+      });
+    }
+
+    // 🔹 3. จำกัดข้อมูลไม่เกิน 5 เกม
+    const limitedTop = topGames.slice(0, 5);
+
+    // 🔹 4. ลบข้อมูลเดิมเฉพาะเมื่อมีข้อมูลใหม่ครบ 1 เกมขึ้นไป
+    await conn.query("DELETE FROM GameRanking");
+
+    // 🔹 5. เพิ่มข้อมูลใหม่เข้า GameRanking
+    for (let i = 0; i < limitedTop.length; i++) {
+      const { game_id } = limitedTop[i];
+      await conn.query(
+        `INSERT INTO GameRanking (game_id, rank_position, rank_date)
+         VALUES (?, ?, CURDATE())`,
+        [game_id, i + 1]
+      );
+    }
+
+    // 🔹 6. ดึงข้อมูลที่เพิ่งอัปเดตกลับมา
+    const [ranking] = await conn.query(`
+      SELECT 
+        r.rank_position,
+        g.game_id,
+        g.name,
+        g.price,
+        g.image,
+        COUNT(mg.mygame_id) AS total_sales
+      FROM GameRanking r
+      JOIN Game g ON g.game_id = r.game_id
+      JOIN MyGame mg ON mg.game_id = g.game_id
+      GROUP BY g.game_id, r.rank_position, g.name, g.price, g.image
+      ORDER BY r.rank_position ASC;
+    `);
+
+    // 🔹 7. ตรวจความถูกต้องของจำนวนข้อมูล
+    if (ranking.length < 5) {
+      console.warn(`⚠️ ข้อมูลเกมขายดีมีเพียง ${ranking.length} เกม`);
+    }
+
+    await conn.commit();
+
+    // 🔹 8. ส่งข้อมูลกลับ
+    res.json({
+      message: `✅ อัปเดตอันดับเกมขายดีสำเร็จ (ได้ ${ranking.length} เกม)`,
+      top5: ranking.map((r) => ({
+        rank: r.rank_position,
+        game_id: r.game_id,
+        name: r.name,
+        price: r.price,
+        image: r.image,
+        total_sales: r.total_sales,
+      })),
+    });
+  } catch (err) {
+    if (conn.rollback) await conn.rollback();
+    console.error("❌ updateAndGetGameRanking error:", err);
+    res.status(500).json({ error: err.message });
+  } finally {
+    if (conn) conn.release();
+  }
+};
+
+export const getMyGames = async (req, res) => {
+  try {
+    const userId = Number(req.params.id || req.query.user_id);
+    if (!userId) return res.status(400).json({ error: "กรุณาระบุ user_id" });
+
+    const [rows] = await pool.query(
+      `SELECT 
+          g.game_id,
+          g.name,
+          g.description,
+          g.price,
+          g.image,
+          g.category_id,
+          c.category_name
+       FROM MyGame mg
+       JOIN Game g ON mg.game_id = g.game_id
+       LEFT JOIN GameCategory c ON g.category_id = c.category_id
+       WHERE mg.user_id = ?`,
+      [userId]
+    );
+
+    if (!rows.length)
+      return res.json({ message: "ยังไม่มีเกมในคลัง", games: [] });
+
+    res.json({
+      message: "✅ ดึงคลังเกมสำเร็จ",
+      user_id: userId,
+      total_games: rows.length,
+      games: rows,
+    });
+  } catch (err) {
+    console.error("❌ getMyGames error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+
